@@ -1,0 +1,18 @@
+{
+  "name": "ngesplit",
+  "version": "1.0.0",
+  "description": "ini buat ngesplit loh ya",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@turf/turf": "^7.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "multer": "^2.0.1",
+    "proj4": "^2.19.5"
+  }
+}
