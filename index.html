@@ -101,8 +101,10 @@
         `;
 
             // Fetch the result GeoJSON and show on map
-            const downloadUrl = "http://localhost:5000" + result.download;
-            const geojsonRes = await fetch(downloadUrl);
+            // OLD: const downloadUrl = 'http://localhost:5000' + result.download;
+            // NEW: use preview GeoJSON for map
+            const previewUrl = "http://localhost:5000" + result.preview;
+            const geojsonRes = await fetch(previewUrl);
             const geojsonData = await geojsonRes.json();
             addGeoJSONToMap(geojsonData, true);
           } else {

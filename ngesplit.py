@@ -1,10 +1,9 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import List, Tuple
-import geopandas as gpd 
-import shapely as shp
+from math import isfinite
+from shapely.geometry import Polygon as ShapelyPolygon
+from math import ceil
 
-# Sutherland-Hodgman polygon clipping (terhadap convex polygon clip window)
 def sutherland_hodgman(subject_polygon, clip_polygon):
     def inside(p, cp1, cp2):
         return (cp2[0] - cp1[0]) * (p[1] - cp1[1]) > (cp2[1] - cp1[1]) * (p[0] - cp1[0])
@@ -16,7 +15,7 @@ def sutherland_hodgman(subject_polygon, clip_polygon):
         n2 = s[0] * e[1] - s[1] * e[0]
         denom = dc[0] * dp[1] - dc[1] * dp[0]
         if denom == 0:
-            return None  # parallel
+            return None
         x = (n1 * dp[0] - n2 * dc[0]) / denom
         y = (n1 * dp[1] - n2 * dc[1]) / denom
         return (x, y)
@@ -32,89 +31,97 @@ def sutherland_hodgman(subject_polygon, clip_polygon):
         for e in input_list:
             if inside(e, cp1, cp2):
                 if not inside(s, cp1, cp2):
-                    output_list.append(intersection(cp1, cp2, s, e))
+                    inter = intersection(cp1, cp2, s, e)
+                    if inter:
+                        output_list.append(inter)
                 output_list.append(e)
             elif inside(s, cp1, cp2):
-                output_list.append(intersection(cp1, cp2, s, e))
+                inter = intersection(cp1, cp2, s, e)
+                if inter:
+                    output_list.append(inter)
             s = e
         cp1 = cp2
     return output_list
 
 
-# Fungsi utama
+def clip_polygon_with_projection(polygon, centroid, direction, start_proj, end_proj):
+    normal = np.array([-direction[1], direction[0]])
+    center1 = centroid + direction * start_proj
+    center2 = centroid + direction * end_proj
+    L = 1e5
+    p1 = center1 + normal * L
+    p2 = center1 - normal * L
+    p3 = center2 - normal * L
+    p4 = center2 + normal * L
+    clip_rect = [tuple(p1), tuple(p2), tuple(p3), tuple(p4)]
+    return sutherland_hodgman(polygon, clip_rect)
+
 def split_polygon_by_count(polygon: List[Tuple[float, float]], n: int) -> List[List[Tuple[float, float]]]:
     coords = np.array(polygon)
+    if len(coords) < 4:
+        return []
+
     X, Y = coords[:, 0], coords[:, 1]
-    
-    # Regresi linear y = ax + b
-    a, b = np.polyfit(X, Y, 1)
-    direction = np.array([1, a])
+    try:
+        a, _ = np.polyfit(X, Y, 1)
+        direction = np.array([1, a]) if isfinite(a) else np.array([0, 1])
+    except:
+        direction = np.array([1, 0])
+
     direction = direction / np.linalg.norm(direction)
-    normal = np.array([-direction[1], direction[0]])  # tegak lurus
-    
     centroid = coords.mean(axis=0)
     projections = [(pt - centroid) @ direction for pt in coords]
     min_proj, max_proj = min(projections), max(projections)
     total_length = max_proj - min_proj
-    step = total_length / n
 
-    # Buat n potongan grid
+    if total_length <= 0:
+        return []
+
+    # Compute total area
+    original_area = ShapelyPolygon(polygon).area
+    target_area = original_area / n
+
     parts = []
+    current_proj = min_proj
     for i in range(n):
-        # Tentukan batas bawah dan atas potongan ke-i
-        start_proj = min_proj + i * step
-        end_proj = min_proj + (i + 1) * step
+        # Use binary search to find next slice that makes target_area
+        low = current_proj
+        high = max_proj
+        best_proj = None
 
-        # Buat kotak clipping (segiempat) tegak lurus regresi
-        center1 = centroid + direction * start_proj
-        center2 = centroid + direction * end_proj
+        for _ in range(50):  # binary search steps
+            mid = (low + high) / 2
+            clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, mid)
+            if not clipped:
+                break
+            area = ShapelyPolygon(clipped).area
+            if abs(area - target_area) / target_area < 0.02:  # within 2%
+                best_proj = mid
+                break
+            elif area > target_area:
+                high = mid
+            else:
+                low = mid
 
-        # Buat persegi panjang yang sangat panjang sepanjang normal
-        L = 1e5
-        p1 = center1 + normal * L
-        p2 = center1 - normal * L
-        p3 = center2 - normal * L
-        p4 = center2 + normal * L
-
-        clip_rect = [tuple(p1), tuple(p2), tuple(p3), tuple(p4)]
-        clipped = sutherland_hodgman(polygon, clip_rect)
+        if best_proj is None:
+            best_proj = low  # fallback to smallest valid area
+        clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, best_proj)
         if clipped:
             parts.append(clipped)
-    
+        current_proj = best_proj
+
     return parts
 
 def split_polygon_by_area(polygon: List[Tuple[float, float]], target_area: float) -> List[List[Tuple[float, float]]]:
     coords = np.array(polygon)
-    X, Y = coords[:, 0].tolist(), coords[:, 1].tolist()
-    area_total = 0.5 * abs(np.dot(X, Y[1:] + [Y[0]]) - np.dot(Y, X[1:] + [X[0]]))
-    
-    from math import ceil
-    direction = np.array([1, np.polyfit(X, Y, 1)[0]])
-    direction = direction / np.linalg.norm(direction)
-    normal = np.array([-direction[1], direction[0]])
-    centroid = coords.mean(axis=0)
+    if len(coords) < 4:
+        return []
 
-    projections = [(pt - centroid) @ direction for pt in coords]
-    min_proj, max_proj = min(projections), max(projections)
-    total_length = max_proj - min_proj
+    X, Y = coords[:, 0], coords[:, 1]
+    area_total = 0.5 * abs(np.dot(X, np.roll(Y, -1)) - np.dot(Y, np.roll(X, -1)))
 
-    n = ceil(area_total / target_area)
-    step = total_length / n
+    if area_total <= 0 or not isfinite(area_total):
+        return []
 
-    parts = []
-    for i in range(n):
-        start_proj = min_proj + i * step
-        end_proj = min_proj + (i + 1) * step
-        center1 = centroid + direction * start_proj
-        center2 = centroid + direction * end_proj
-        L = 1e5
-        p1 = center1 + normal * L
-        p2 = center1 - normal * L
-        p3 = center2 - normal * L
-        p4 = center2 + normal * L
-        clip_rect = [tuple(p1), tuple(p2), tuple(p3), tuple(p4)]
-        clipped = sutherland_hodgman(polygon, clip_rect)
-        if clipped:
-            parts.append(clipped)
-    return parts
-
+    n_parts = ceil(area_total / target_area)
+    return split_polygon_by_count(polygon, n_parts)
