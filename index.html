@@ -1,460 +1,114 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Polygon Splitter Tool</title>
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
-    />
+    <title>GeoJSON Split Viewer</title>
+    <meta charset="utf-8" />
     <style>
-      body {
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background-color: #f8f9fa;
-      }
-      .container {
-        max-width: 1200px;
-        margin-top: 30px;
-      }
-      .card {
-        border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        margin-bottom: 20px;
-        border: none;
-      }
-      .card-header {
-        background-color: #4a6baf;
-        color: white;
-        border-radius: 10px 10px 0 0 !important;
-        padding: 15px 20px;
-        font-weight: 600;
-      }
       #map {
-        height: 400px;
-        border-radius: 8px;
-        z-index: 1;
-      }
-      .btn-primary {
-        background-color: #4a6baf;
-        border-color: #4a6baf;
-      }
-      .btn-primary:hover {
-        background-color: #3a5a9f;
-        border-color: #3a5a9f;
-      }
-      .progress {
-        height: 8px;
-        margin-top: 10px;
-      }
-      .result-item {
-        padding: 10px;
-        border-bottom: 1px solid #eee;
-        transition: background-color 0.2s;
-      }
-      .result-item:hover {
-        background-color: #f8f9fa;
-      }
-      .preview-color {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border-radius: 4px;
-        margin-right: 10px;
-      }
-      .color-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 15px;
-      }
-      .legend-item {
-        display: flex;
-        align-items: center;
-        font-size: 14px;
-      }
-      #downloadAll {
-        margin-top: 15px;
-      }
-      .file-input-label {
-        cursor: pointer;
-        padding: 10px 15px;
-        background-color: #e9ecef;
-        border-radius: 5px;
-        display: inline-block;
+        height: 500px;
         width: 100%;
-        text-align: center;
-      }
-      .file-input-label:hover {
-        background-color: #dee2e6;
-      }
-      #fileName {
-        margin-top: 5px;
-        font-size: 14px;
-        color: #6c757d;
+        margin-top: 20px;
       }
     </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   </head>
   <body>
-    <div class="container">
-      <div class="row">
-        <div class="col-md-12">
-          <h2 class="text-center mb-4">Polygon Splitter Tool</h2>
-          <p class="text-center text-muted mb-4">
-            Upload a GeoJSON file containing polygons and split them into equal
-            parts
-          </p>
-        </div>
-      </div>
+    <h2>Upload and Split GeoJSON</h2>
+    <form id="uploadForm">
+      <label for="file">GeoJSON File:</label>
+      <input type="file" name="file" accept=".geojson" required /><br /><br />
 
-      <div class="row">
-        <div class="col-md-6">
-          <div class="card">
-            <div class="card-header">Upload & Configuration</div>
-            <div class="card-body">
-              <div class="mb-3">
-                <label for="geojsonFile" class="form-label">GeoJSON File</label>
-                <label class="file-input-label">
-                  <input
-                    type="file"
-                    id="geojsonFile"
-                    accept=".geojson,.json"
-                    style="display: none"
-                  />
-                  <i class="bi bi-upload"></i> Choose File
-                </label>
-                <div id="fileName">No file selected</div>
-              </div>
+      <label for="mode">Mode:</label>
+      <select name="mode" required>
+        <option value="0">Split by Count</option>
+        <option value="1">Split by Area</option></select
+      ><br /><br />
 
-              <div class="mb-3">
-                <label for="splitMode" class="form-label">Split Mode</label>
-                <select class="form-select" id="splitMode">
-                  <option value="count">Split into N equal parts</option>
-                  <option value="area">Split by area (m²)</option>
-                  <option value="horizontal-count">
-                    Horizontal split into N equal parts
-                  </option>
-                  <option value="horizontal-area">
-                    Horizontal split by area (m²)
-                  </option>
-                </select>
-              </div>
+      <label for="val">Value (Count or Area):</label>
+      <input type="number" name="val" step="any" required /><br /><br />
 
-              <div class="mb-3">
-                <label for="splitValue" class="form-label" id="valueLabel"
-                  >Number of parts</label
-                >
-                <input
-                  type="number"
-                  class="form-control"
-                  id="splitValue"
-                  min="1"
-                  step="1"
-                  value="4"
-                />
-              </div>
+      <button type="submit">Upload & Process</button>
+    </form>
 
-              <button id="processBtn" class="btn btn-primary w-100">
-                Process Polygon
-              </button>
+    <div id="result"></div>
+    <div id="map"></div>
 
-              <div class="progress" id="progressBar" style="display: none">
-                <div
-                  class="progress-bar progress-bar-striped progress-bar-animated"
-                  role="progressbar"
-                  style="width: 100%"
-                ></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card mt-4" id="resultsCard" style="display: none">
-            <div class="card-header">Results</div>
-            <div class="card-body">
-              <div id="resultsSummary" class="mb-3"></div>
-              <div id="resultsList" class="mb-3"></div>
-              <button id="downloadAll" class="btn btn-outline-primary w-100">
-                Download All Parts as GeoJSON
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <div class="card">
-            <div class="card-header">Map Preview</div>
-            <div class="card-body">
-              <div id="map"></div>
-              <div id="legend" class="color-legend"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/terraformer@1.0.8/terraformer.js"></script>
-    <script src="https://unpkg.com/terraformer-arcgis-parser@1.0.5/terraformer-arcgis-parser.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-      // Initialize map
       const map = L.map("map").setView([0, 0], 2);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 18,
       }).addTo(map);
 
-      // UI Elements
-      const geojsonFileInput = document.getElementById("geojsonFile");
-      const fileNameDisplay = document.getElementById("fileName");
-      const splitModeSelect = document.getElementById("splitMode");
-      const splitValueInput = document.getElementById("splitValue");
-      const valueLabel = document.getElementById("valueLabel");
-      const processBtn = document.getElementById("processBtn");
-      const progressBar = document.getElementById("progressBar");
-      const resultsCard = document.getElementById("resultsCard");
-      const resultsSummary = document.getElementById("resultsSummary");
-      const resultsList = document.getElementById("resultsList");
-      const downloadAllBtn = document.getElementById("downloadAll");
-      const legend = document.getElementById("legend");
+      let uploadedLayer = null;
+      let resultLayer = null;
 
-      // Store layers and results
-      let originalLayer = null;
-      let resultLayers = [];
-      let currentResults = null;
-
-      // Update label based on mode
-      splitModeSelect.addEventListener("change", function () {
-        const mode = this.value;
-        if (mode === "count" || mode === "horizontal-count") {
-          valueLabel.textContent = "Number of parts";
-          splitValueInput.min = "1";
-          splitValueInput.step = "1";
-        } else {
-          valueLabel.textContent = "Area (square meters)";
-          splitValueInput.min = "0.1";
-          splitValueInput.step = "any";
+      function clearLayers() {
+        if (uploadedLayer) {
+          map.removeLayer(uploadedLayer);
         }
-      });
-
-      // Handle file selection
-      geojsonFileInput.addEventListener("change", function (e) {
-        if (e.target.files.length > 0) {
-          fileNameDisplay.textContent = e.target.files[0].name;
-          previewGeoJSON(e.target.files[0]);
-        } else {
-          fileNameDisplay.textContent = "No file selected";
+        if (resultLayer) {
+          map.removeLayer(resultLayer);
         }
-      });
-
-      // Preview GeoJSON on map
-      function previewGeoJSON(file) {
-        clearMap();
-
-        const reader = new FileReader();
-        reader.onload = function (e) {
-          try {
-            const geojson = JSON.parse(e.target.result);
-            originalLayer = L.geoJSON(geojson, {
-              style: {
-                color: "#3388ff",
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.3,
-              },
-            }).addTo(map);
-
-            // Fit map to layer bounds
-            map.fitBounds(originalLayer.getBounds());
-          } catch (error) {
-            alert("Error parsing GeoJSON: " + error.message);
-          }
-        };
-        reader.readAsText(file);
       }
 
-      // Clear map layers
-      function clearMap() {
-        if (originalLayer) {
-          map.removeLayer(originalLayer);
-          originalLayer = null;
+      function addGeoJSONToMap(data, isResult = false) {
+        const layer = L.geoJSON(data).addTo(map);
+        map.fitBounds(layer.getBounds());
+
+        if (isResult) {
+          resultLayer = layer;
+        } else {
+          uploadedLayer = layer;
         }
-        resultLayers.forEach((layer) => map.removeLayer(layer));
-        resultLayers = [];
-        legend.innerHTML = "";
       }
 
-      // Process button click
-      processBtn.addEventListener("click", async function () {
-        if (!geojsonFileInput.files.length) {
-          alert("Please select a GeoJSON file first");
-          return;
-        }
+      document
+        .querySelector('input[name="file"]')
+        .addEventListener("change", function (e) {
+          const file = e.target.files[0];
+          if (!file) return;
 
-        const mode = splitModeSelect.value;
-        const value = parseFloat(splitValueInput.value);
+          const reader = new FileReader();
+          reader.onload = function (event) {
+            const geojson = JSON.parse(event.target.result);
+            clearLayers();
+            addGeoJSONToMap(geojson, false);
+          };
+          reader.readAsText(file);
+        });
 
-        if (isNaN(value) || value <= 0) {
-          alert("Please enter a valid positive number");
-          return;
-        }
+      document
+        .getElementById("uploadForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
 
-        // Show loading state
-        processBtn.disabled = true;
-        progressBar.style.display = "block";
+          const form = e.target;
+          const formData = new FormData(form);
 
-        try {
-          const file = geojsonFileInput.files[0];
-          const formData = new FormData();
-          formData.append("geojson", file);
-          formData.append("mode", mode);
-          formData.append("value", value);
-
-          // In your HTML/JavaScript frontend code, modify your fetch calls like this:
-          const response = await fetch("http://localhost:3000/api/split", {
+          const response = await fetch("http://localhost:5000/upload", {
             method: "POST",
             body: formData,
-
-            headers: {
-              Accept: "application/json",
-            },
           });
-
-          if (!response.ok) {
-            throw new Error(await response.text());
-          }
 
           const result = await response.json();
-          currentResults = result;
+          const resultBox = document.getElementById("result");
 
-          // Display results
-          displayResults(result);
+          if (response.ok) {
+            resultBox.innerHTML = `
+          <p><strong>Success!</strong></p>
+          <a href="${result.download}" target="_blank">Download Result</a>
+        `;
 
-          // Download the result automatically
-          if (result.downloadUrl) {
-            window.open(result.downloadUrl, "_blank");
+            // Fetch the result GeoJSON and show on map
+            const downloadUrl = "http://localhost:5000" + result.download;
+            const geojsonRes = await fetch(downloadUrl);
+            const geojsonData = await geojsonRes.json();
+            addGeoJSONToMap(geojsonData, true);
+          } else {
+            resultBox.textContent = `Error: ${result.error}`;
           }
-        } catch (error) {
-          console.error("Error:", error);
-          alert("Processing failed: " + error.message);
-        } finally {
-          processBtn.disabled = false;
-          progressBar.style.display = "none";
-        }
-      });
-
-      // Display results
-      function displayResults(result) {
-        resultsCard.style.display = "block";
-        resultsSummary.innerHTML = `
-                <p>Successfully split polygon into <strong>${result.partsCount}</strong> parts</p>
-            `;
-
-        // Clear previous results
-        resultsList.innerHTML = "";
-        clearMap();
-
-        // Fetch and display the result GeoJSON
-        fetch(result.downloadUrl)
-          .then((response) => response.json())
-          .then((geojson) => {
-            // Display on map with different colors
-            const colors = [
-              "#FF5733",
-              "#33FF57",
-              "#3357FF",
-              "#F3FF33",
-              "#FF33F3",
-              "#33FFF3",
-              "#FF8C33",
-              "#8C33FF",
-            ];
-
-            geojson.features.forEach((feature, index) => {
-              const color = colors[index % colors.length];
-
-              // Add to map
-              const layer = L.geoJSON(feature, {
-                style: {
-                  color: color,
-                  weight: 2,
-                  opacity: 1,
-                  fillColor: color,
-                  fillOpacity: 0.5,
-                },
-              }).addTo(map);
-              resultLayers.push(layer);
-
-              // Add to legend
-              const legendItem = document.createElement("div");
-              legendItem.className = "legend-item";
-              legendItem.innerHTML = `
-                            <span class="preview-color" style="background-color: ${color};"></span>
-                            Part ${index + 1}
-                        `;
-              legend.appendChild(legendItem);
-
-              // Add to results list
-              const resultItem = document.createElement("div");
-              resultItem.className = "result-item";
-              resultItem.innerHTML = `
-                            <strong>Part ${index + 1}</strong>
-                            <button class="btn btn-sm btn-outline-primary float-end" 
-                                    onclick="downloadSinglePart(${index})">
-                                Download
-                            </button>
-                        `;
-              resultsList.appendChild(resultItem);
-            });
-
-            // Fit map to all result layers
-            const group = new L.featureGroup(resultLayers);
-            map.fitBounds(group.getBounds());
-          })
-          .catch((error) => {
-            console.error("Error loading results:", error);
-            resultsSummary.innerHTML += `<p class="text-danger">Error displaying results: ${error.message}</p>`;
-          });
-      }
-
-      // Download all parts
-      downloadAllBtn.addEventListener("click", function () {
-        if (currentResults && currentResults.downloadUrl) {
-          window.open(currentResults.downloadUrl, "_blank");
-        }
-      });
-
-      // Download single part (added to window for button onclick)
-      window.downloadSinglePart = function (index) {
-        if (currentResults && currentResults.downloadUrl) {
-          fetch(currentResults.downloadUrl)
-            .then((response) => response.json())
-            .then((geojson) => {
-              // Create a GeoJSON with just this feature
-              const singleFeatureGeoJSON = {
-                type: "FeatureCollection",
-                features: [geojson.features[index]],
-              };
-
-              // Trigger download
-              const blob = new Blob([JSON.stringify(singleFeatureGeoJSON)], {
-                type: "application/json",
-              });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `part_${index + 1}.geojson`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            });
-        }
-      };
+        });
     </script>
   </body>
 </html>
