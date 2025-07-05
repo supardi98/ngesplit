@@ -118,10 +118,50 @@ def split_polygon_by_area(polygon: List[Tuple[float, float]], target_area: float
         return []
 
     X, Y = coords[:, 0], coords[:, 1]
-    area_total = 0.5 * abs(np.dot(X, np.roll(Y, -1)) - np.dot(Y, np.roll(X, -1)))
+    try:
+        a, _ = np.polyfit(X, Y, 1)
+        direction = np.array([1, a]) if isfinite(a) else np.array([0, 1])
+    except:
+        direction = np.array([1, 0])
 
-    if area_total <= 0 or not isfinite(area_total):
-        return []
+    direction = direction / np.linalg.norm(direction)
+    centroid = coords.mean(axis=0)
+    projections = [(pt - centroid) @ direction for pt in coords]
+    min_proj, max_proj = min(projections), max(projections)
 
-    n_parts = ceil(area_total / target_area)
-    return split_polygon_by_count(polygon, n_parts)
+    parts = []
+    current_proj = min_proj
+    original_polygon = ShapelyPolygon(polygon)
+    total_area = original_polygon.area
+
+    while True:
+        low = current_proj
+        high = max_proj
+        best_proj = None
+
+        for _ in range(50):
+            mid = (low + high) / 2
+            clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, mid)
+            if not clipped:
+                break
+            area = ShapelyPolygon(clipped).area
+            if abs(area - target_area) / target_area < 0.01:
+                best_proj = mid
+                break
+            elif area > target_area:
+                high = mid
+            else:
+                low = mid
+
+        if best_proj is None:
+            # Tidak bisa menemukan potongan dengan luas mendekati target lagi, stop
+            break
+
+        clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, best_proj)
+        if clipped:
+            parts.append(clipped)
+            current_proj = best_proj
+        else:
+            break
+
+    return parts
