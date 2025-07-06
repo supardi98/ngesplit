@@ -1,10 +1,14 @@
 from flask import Flask, request, send_from_directory, jsonify
+from flask_cors import CORS
 import os
 import geopandas as gpd
 from shapely.geometry import Polygon
 from ngesplit import split_polygon_by_area, split_polygon_by_count
+import json;
 
 app = Flask(__name__)
+CORS(app)
+
 PROCESSED_FOLDER = 'processed'
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
@@ -24,6 +28,11 @@ def split_polygon(gdf, mode, val):
         for part_coords in parts:
             all_parts.append(Polygon(part_coords))
     return gpd.GeoDataFrame(geometry=gpd.GeoSeries(all_parts), crs="EPSG:4326")
+
+# open index.html
+@app.route('/', methods=['GET'])
+def index():
+    return app.send_static_file('index.html')
 
 @app.route('/upload', methods=['POST'])
 def upload():
@@ -53,15 +62,18 @@ def upload():
     # Save result using original CRS
     output_path = os.path.join(PROCESSED_FOLDER, 'hasil_split.geojson')
     result.to_file(output_path, driver="GeoJSON")
+    geojson = result.to_json()
 
     # Also save WGS84 version for Leaflet preview
     preview_path = os.path.join(PROCESSED_FOLDER, 'preview.geojson')
     result.to_crs("EPSG:4326").to_file(preview_path, driver="GeoJSON")
 
+    # open raw data
     return jsonify({
         'message': 'File processed',
         'download': '/download/hasil_split.geojson',
-        'preview': '/download/preview.geojson'
+        'preview': '/download/preview.geojson',
+        'result_geojson': json.loads(geojson)
     })
 
 @app.route('/download/<filename>', methods=['GET'])

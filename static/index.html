@@ -106,6 +106,7 @@
             const previewUrl = "http://localhost:5000" + result.preview;
             const geojsonRes = await fetch(previewUrl);
             const geojsonData = await geojsonRes.json();
+            clearLayers();
             addGeoJSONToMap(geojsonData, true);
           } else {
             resultBox.textContent = `Error: ${result.error}`;
