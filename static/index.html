@@ -86,7 +86,7 @@
           const form = e.target;
           const formData = new FormData(form);
 
-          const response = await fetch("http://localhost:5000/upload", {
+          const response = await fetch("/upload", {
             method: "POST",
             body: formData,
           });
@@ -103,7 +103,7 @@
             // Fetch the result GeoJSON and show on map
             // OLD: const downloadUrl = 'http://localhost:5000' + result.download;
             // NEW: use preview GeoJSON for map
-            const previewUrl = "http://localhost:5000" + result.preview;
+            const previewUrl = result.preview;
             const geojsonRes = await fetch(previewUrl);
             const geojsonData = await geojsonRes.json();
             clearLayers();
