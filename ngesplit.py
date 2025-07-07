@@ -1,9 +1,11 @@
 import numpy as np
 from typing import List, Tuple
+from shapely.geometry import MultiPolygon, LineString,Polygon
+from shapely.ops import polygonize
 from math import isfinite
-from shapely.geometry import Polygon as ShapelyPolygon
-from math import ceil
 
+
+# Sutherland-Hodgman Clipping
 def sutherland_hodgman(subject_polygon, clip_polygon):
     def inside(p, cp1, cp2):
         return (cp2[0] - cp1[0]) * (p[1] - cp1[1]) > (cp2[1] - cp1[1]) * (p[0] - cp1[0])
@@ -44,6 +46,7 @@ def sutherland_hodgman(subject_polygon, clip_polygon):
     return output_list
 
 
+# Clipping Rectangle Generator
 def clip_polygon_with_projection(polygon, centroid, direction, start_proj, end_proj):
     normal = np.array([-direction[1], direction[0]])
     center1 = centroid + direction * start_proj
@@ -56,7 +59,28 @@ def clip_polygon_with_projection(polygon, centroid, direction, start_proj, end_p
     clip_rect = [tuple(p1), tuple(p2), tuple(p3), tuple(p4)]
     return sutherland_hodgman(polygon, clip_rect)
 
-def split_polygon_by_count(polygon: List[Tuple[float, float]], n: int) -> List[List[Tuple[float, float]]]:
+
+# Fix to valid polygon
+
+def to_valid_polygon(coords):
+    poly = Polygon(coords)
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+
+    if poly.is_empty:
+        return None
+
+    lines = [LineString(coords)]
+    polys = list(polygonize(lines))
+
+    if len(polys) == 1:
+        return polys[0]
+    elif len(polys) > 1:
+        return MultiPolygon(polys)
+    else:
+        return poly
+
+def split_polygon_by_area(polygon: List[Tuple[float, float]], target_area: float) -> List[Polygon]:
     coords = np.array(polygon)
     if len(coords) < 4:
         return []
@@ -67,85 +91,29 @@ def split_polygon_by_count(polygon: List[Tuple[float, float]], n: int) -> List[L
         direction = np.array([1, a]) if isfinite(a) else np.array([0, 1])
     except:
         direction = np.array([1, 0])
-
     direction = direction / np.linalg.norm(direction)
-    centroid = coords.mean(axis=0)
-    projections = [(pt - centroid) @ direction for pt in coords]
-    min_proj, max_proj = min(projections), max(projections)
-    total_length = max_proj - min_proj
 
-    if total_length <= 0:
-        return []
-
-    # Compute total area
-    original_area = ShapelyPolygon(polygon).area
-    target_area = original_area / n
-
-    parts = []
-    current_proj = min_proj
-    for i in range(n):
-        # Use binary search to find next slice that makes target_area
-        low = current_proj
-        high = max_proj
-        best_proj = None
-
-        for _ in range(50):  # binary search steps
-            mid = (low + high) / 2
-            clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, mid)
-            if not clipped:
-                break
-            area = ShapelyPolygon(clipped).area
-            if abs(area - target_area) / target_area < 0.02:  # within 2%
-                best_proj = mid
-                break
-            elif area > target_area:
-                high = mid
-            else:
-                low = mid
-
-        if best_proj is None:
-            best_proj = low  # fallback to smallest valid area
-        clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, best_proj)
-        if clipped:
-            parts.append(clipped)
-        current_proj = best_proj
-
-    return parts
-
-def split_polygon_by_area(polygon: List[Tuple[float, float]], target_area: float) -> List[List[Tuple[float, float]]]:
-    coords = np.array(polygon)
-    if len(coords) < 4:
-        return []
-
-    X, Y = coords[:, 0], coords[:, 1]
-    try:
-        a, _ = np.polyfit(X, Y, 1)
-        direction = np.array([1, a]) if isfinite(a) else np.array([0, 1])
-    except:
-        direction = np.array([1, 0])
-
-    direction = direction / np.linalg.norm(direction)
     centroid = coords.mean(axis=0)
     projections = [(pt - centroid) @ direction for pt in coords]
     min_proj, max_proj = min(projections), max(projections)
 
     parts = []
     current_proj = min_proj
-    original_polygon = ShapelyPolygon(polygon)
-    total_area = original_polygon.area
+    total_area = Polygon(polygon).area
 
     while True:
         low = current_proj
         high = max_proj
         best_proj = None
 
-        for _ in range(50):
+        for _ in range(200):
             mid = (low + high) / 2
-            clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, mid)
-            if not clipped:
+            clipped_coords = clip_polygon_with_projection(polygon, centroid, direction, current_proj, mid)
+            if not clipped_coords:
                 break
-            area = ShapelyPolygon(clipped).area
-            if abs(area - target_area) / target_area < 0.01:
+            clipped_poly = to_valid_polygon(clipped_coords)
+            area = clipped_poly.area
+            if abs(area - target_area) / target_area < 0.00005:
                 best_proj = mid
                 break
             elif area > target_area:
@@ -154,14 +122,80 @@ def split_polygon_by_area(polygon: List[Tuple[float, float]], target_area: float
                 low = mid
 
         if best_proj is None:
-            # Tidak bisa menemukan potongan dengan luas mendekati target lagi, stop
             break
 
-        clipped = clip_polygon_with_projection(polygon, centroid, direction, current_proj, best_proj)
-        if clipped:
-            parts.append(clipped)
+        clipped_coords = clip_polygon_with_projection(polygon, centroid, direction, current_proj, best_proj)
+        if clipped_coords:
+            clipped_poly = to_valid_polygon(clipped_coords)
+            parts.append(clipped_poly)
             current_proj = best_proj
         else:
             break
+
+    # ✅ Masukkan sisa polygon terakhir
+    last_coords = clip_polygon_with_projection(polygon, centroid, direction, current_proj, max_proj)
+    if last_coords:
+        last_poly = to_valid_polygon(last_coords)
+        parts.append(last_poly)
+
+    return parts
+
+def split_polygon_by_count(polygon: List[Tuple[float, float]], n: int) -> List[Polygon]:
+    coords = np.array(polygon)
+    if len(coords) < 4:
+        return []
+
+    X, Y = coords[:, 0], coords[:, 1]
+    try:
+        a, _ = np.polyfit(X, Y, 1)
+        direction = np.array([1, a]) if isfinite(a) else np.array([0, 1])
+    except:
+        direction = np.array([1, 0])
+    direction = direction / np.linalg.norm(direction)
+
+    centroid = coords.mean(axis=0)
+    projections = [(pt - centroid) @ direction for pt in coords]
+    min_proj, max_proj = min(projections), max(projections)
+    total_area = Polygon(polygon).area
+    target_area = total_area / n
+
+    parts = []
+    current_proj = min_proj
+    for i in range(n - 1):  # Lakukan n-1 kali
+        low = current_proj
+        high = max_proj
+        best_proj = None
+
+        for _ in range(200):
+            mid = (low + high) / 2
+            clipped_coords = clip_polygon_with_projection(polygon, centroid, direction, current_proj, mid)
+            if not clipped_coords:
+                break
+            clipped_poly = to_valid_polygon(clipped_coords)
+            area = clipped_poly.area
+            if abs(area - target_area) / target_area < 0.00005:
+                best_proj = mid
+                break
+            elif area > target_area:
+                high = mid
+            else:
+                low = mid
+
+        if best_proj is None:
+            break
+
+        clipped_coords = clip_polygon_with_projection(polygon, centroid, direction, current_proj, best_proj)
+        if clipped_coords:
+            clipped_poly = to_valid_polygon(clipped_coords)
+            parts.append(clipped_poly)
+            current_proj = best_proj
+        else:
+            break
+
+    # ✅ Masukkan sisa terakhir sebagai potongan ke-n
+    final_coords = clip_polygon_with_projection(polygon, centroid, direction, current_proj, max_proj)
+    if final_coords:
+        clipped_poly = to_valid_polygon(final_coords)
+        parts.append(clipped_poly)
 
     return parts
