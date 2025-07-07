@@ -1,7 +1,7 @@
 from flask import Flask, request, send_from_directory, jsonify
 import os
 import geopandas as gpd
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon
 from ngesplit import split_polygon_by_area, split_polygon_by_count
 
 app = Flask(__name__)
@@ -21,8 +21,11 @@ def split_polygon(gdf, mode, val):
             parts = split_polygon_by_count(coords, int(val))
         elif mode == 1:
             parts = split_polygon_by_area(coords, val)
-        for part_coords in parts:
-            all_parts.append(Polygon(part_coords))
+        for part in parts:
+            if isinstance(part, (Polygon, MultiPolygon)):
+                all_parts.append(part)
+            else:
+                all_parts.append(Polygon(part))
     return gpd.GeoDataFrame(geometry=gpd.GeoSeries(all_parts), crs="EPSG:4326")
 
 @app.route('/upload', methods=['POST'])
