@@ -46,12 +46,12 @@ def upload():
     original_crs = gdf.crs
 
     # Reproject to WGS84 for processing & preview
-    gdf_wgs84 = gdf.to_crs("EPSG:4326")
-    result = split_polygon(gdf, mode, val)
+    gdf_utm = gdf.to_crs("EPSG:3857")
+    result = split_polygon(gdf_utm, mode, val)
 
     # Reproject result back to original CRS (if defined)
     if original_crs:
-        result = result.set_crs(original_crs,allow_override=True)
+        result = result.set_crs("EPSG:3857",allow_override=True).to_crs(original_crs)
 
     # Save result using original CRS
     output_path = os.path.join(PROCESSED_FOLDER, 'hasil_split.geojson')
